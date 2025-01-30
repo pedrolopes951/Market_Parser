@@ -12,4 +12,4 @@ set(CMAKE_CXX_FLGAS "-02 -Wall -Wextra")
 
 include_directories(include)
 
-add_executable(${PROJECT_NAME} src/main.cpp src/DataParser.cpp src/Logger.cpp)
+add_executable(${PROJECT_NAME} src/main.cpp src/DataParser.cpp src/Logger.cpp src/BenchMark.cpp)
