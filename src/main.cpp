@@ -1,33 +1,24 @@
-#include <iostream>
+#include "MarketDataClient.hpp"
+#include "MarketDataServer.hpp"
 #include "Logger.hpp"
-#include "DataParser.hpp"
+#include <thread>
+#include <chrono>
 
 int main()
 {
-    const std::string csvFile = std::string(DATA_FOLDER) + "/market_data_test.csv";
-
     Logger::getInstance().setLogFile("log.txt");
 
-    try
-    {
-        auto data = ParsingFunctions::readCSV(csvFile.c_str());
-        
-        //Print values to the console to check
-        for (const auto& entry : data)
-        {
-            std::cout << "Timestamp :" << entry.m_timestamp
-                      << ",Price :" << entry.m_price
-                      << ",Quatity :" << entry.m_quantity
-                      << std::endl;
-        }
-        Logger::getInstance().log("Program completed successfully.", Logger::LogLevel::INFO);
+    // Start server in a separate thread  111111111
+    std::thread serverThread([]() {
+        MarkerDataServer::StartServer(8080, std::string(DATA_FOLDER)+"/market_data_test.csv");
+    });
 
-        
-    }
-    catch(const std::exception& e)
-    {
-        Logger::getInstance().log(e.what(), Logger::LogLevel::ERROR);
-    }
-    
+    // Wait for the server to start  m
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // Start client
+    MarkerDataClient::connectToServer("127.0.0.1", 8080);
+
+    serverThread.join(); // Keep main thread alive
     return 0;
 }

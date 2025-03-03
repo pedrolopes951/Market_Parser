@@ -12,4 +12,15 @@ set(CMAKE_CXX_FLGAS "-02 -Wall -Wextra")
 
 include_directories(include)
 
-add_executable(${PROJECT_NAME} src/main.cpp src/DataParser.cpp src/Logger.cpp src/BenchMark.cpp)
+add_executable(${PROJECT_NAME} 
+    src/main.cpp
+    src/BenchMark.cpp 
+    src/DataParser.cpp 
+    src/Logger.cpp 
+    src/MarketDataServer.cpp 
+    src/MarketDataClient.cpp
+)
+
+target_link_libraries(${PROJECT_NAME} pthread boost_system)
+
+add_subdirectory(test)

@@ -55,6 +55,17 @@
         "semaphore": "cpp",
         "stop_token": "cpp",
         "thread": "cpp",
-        "sstream": "cpp"
+        "sstream": "cpp",
+        "any": "cpp",
+        "variant": "cpp",
+        "csignal": "cpp",
+        "cstring": "cpp",
+        "codecvt": "cpp",
+        "coroutine": "cpp",
+        "list": "cpp",
+        "map": "cpp",
+        "source_location": "cpp",
+        "future": "cpp",
+        "cinttypes": "cpp"
     }
 }
