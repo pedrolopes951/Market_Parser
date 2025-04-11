@@ -67,6 +67,17 @@
         "source_location": "cpp",
         "future": "cpp",
         "cinttypes": "cpp",
-        "*.ipp": "cpp"
-    }
+        "*.ipp": "cpp",
+        "forward_list": "cpp",
+        "iomanip": "cpp",
+        "valarray": "cpp",
+        "bitset": "cpp",
+        "charconv": "cpp",
+        "complex": "cpp",
+        "set": "cpp",
+        "format": "cpp",
+        "span": "cpp",
+        "typeindex": "cpp"
+    },
+    "C_Cpp.default.configurationProvider": "go2sh.cmake-integration"
 }
