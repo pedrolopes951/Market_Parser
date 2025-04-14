@@ -70,10 +70,6 @@ namespace MarketDataServer
                                           std::to_string(config.port),
                                       Logger::LogLevel::INFO);
 
-            // Start the background data update thread
-            std::thread updateThread = StartPeriodicFetching(config);
-            updateThread.detach(); // Let it run independently
-
             // Accept connections in a loop
             while (true)
             {
@@ -103,8 +99,29 @@ namespace MarketDataServer
     {
         try
         {
-            // For now, default to sending AAPL data
-            SendMarketData(socket, "AAPL");
+            // Read client request for which symbol they want
+            boost::asio::streambuf buffer;
+            boost::asio::read_until(*socket, buffer, "\n");
+
+            // Extract the symbol from the request
+            std::string message(boost::asio::buffer_cast<const char *>(buffer.data()),
+                                buffer.size());
+            std::string symbol = "AAPL"; // Default to AAPL if no valid request
+
+            // Parse the message to get the symbol (simple protocol: "GET SYMBOL\n")
+            if (message.substr(0, 3) == "GET" && message.length() > 4)
+            {
+                symbol = message.substr(4, message.find('\n') - 4);
+                // Trim whitespace
+                symbol.erase(0, symbol.find_first_not_of(" \t"));
+                symbol.erase(symbol.find_last_not_of(" \t\n\r") + 1);
+
+                Logger::getInstance().log("Client requested symbol: " + symbol,
+                                          Logger::LogLevel::INFO);
+            }
+
+            // Send the requested symbol's data
+            SendMarketData(socket, symbol);
         }
         catch (const std::exception &e)
         {
@@ -272,7 +289,7 @@ namespace MarketDataServer
     {
         // Set the global flag
         g_shouldContinueFetching = true;
-        
+
         // Start the thread with just the config parameter
         return std::thread(DataUpdateTask, config);
     }

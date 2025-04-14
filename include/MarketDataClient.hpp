@@ -18,4 +18,10 @@ namespace MarketDataClient
     
     // Display market data in the console
     void displayMarketData(const std::vector<MarketDataEntry>& data, size_t maxEntries = 10);
+
+    // Display filtered market data
+    void displayFilteredData(const std::vector<MarketDataEntry>& entries);
+
+    // Allow user to prompt the symbol
+    std::string promptForSymbol();
 };
