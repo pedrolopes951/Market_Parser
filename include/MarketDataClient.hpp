@@ -24,4 +24,7 @@ namespace MarketDataClient
 
     // Allow user to prompt the symbol
     std::string promptForSymbol();
+
+    // New function for interactive client loop
+    void runClientInteractionLoop(std::shared_ptr<tcp::socket> socket);
 };

@@ -23,20 +23,75 @@ namespace MarketDataClient
 
             std::cout << "Connected to market data server at " << serverAddress << ":" << port << std::endl;
 
-            // Show symbol selection menu
-            std::string symbol = promptForSymbol();
-
-            // Send request for the selected symbol
-            std::string request = "GET " + symbol + "\n";
-            boost::asio::write(*socket, boost::asio::buffer(request));
-
-            // Receive and process data
-            handleMarketData(socket);
+            runClientInteractionLoop(socket);
         }
         catch (const std::exception &e)
         {
             Logger::getInstance().log("Client error: " + std::string(e.what()),
                                       Logger::LogLevel::ERROR);
+        }
+    }
+
+    void runClientInteractionLoop(std::shared_ptr<tcp::socket> socket)
+    {
+        while (true)
+        {
+            try
+            {
+                // Show symbol selection menu
+                std::string symbol = promptForSymbol();
+
+                // Option to exit
+                if (symbol == "exit" || symbol == "quit")
+                {
+                    std::cout << "Exiting client..." << std::endl;
+                    break;
+                }
+
+                // Send request for the selected symbol
+                std::string request = "GET " + symbol + "\n";
+                boost::asio::write(*socket, boost::asio::buffer(request));
+
+                // Receive and process data
+                handleMarketData(socket);
+
+                // Ask if user wants to continue
+                std::cout << "\nDo you want to fetch more data? (yes/no): ";
+                std::string continueChoice;
+                std::getline(std::cin, continueChoice);
+
+                // Convert to lowercase for case-insensitive comparison
+                std::transform(continueChoice.begin(), continueChoice.end(),
+                               continueChoice.begin(), ::tolower);
+
+                // Break the loop if user doesn't want to continue
+                if (continueChoice != "yes" && continueChoice != "y")
+                {
+                    std::cout << "Exiting client..." << std::endl;
+                    break;
+                }
+            }
+            catch (const std::exception &e)
+            {
+                Logger::getInstance().log("Client interaction error: " + std::string(e.what()),
+                                          Logger::LogLevel::ERROR);
+
+                // Ask if user wants to try again
+                std::cout << "An error occurred. Do you want to try again? (yes/no): ";
+                std::string retryChoice;
+                std::getline(std::cin, retryChoice);
+
+                // Convert to lowercase for case-insensitive comparison
+                std::transform(retryChoice.begin(), retryChoice.end(),
+                               retryChoice.begin(), ::tolower);
+
+                // Break the loop if user doesn't want to retry
+                if (retryChoice != "yes" && retryChoice != "y")
+                {
+                    std::cout << "Exiting client..." << std::endl;
+                    break;
+                }
+            }
         }
     }
 
@@ -132,7 +187,7 @@ namespace MarketDataClient
     {
         // Show filtering options
         std::cout << "\n=== Filter Options ===\n";
-        
+
         std::cout << "1. Show all data\n";
         std::cout << "2. Show last N entries\n";
         std::cout << "3. Show entries with price > X\n";
