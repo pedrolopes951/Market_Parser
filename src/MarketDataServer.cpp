@@ -63,35 +63,101 @@ namespace MarketDataServer
             // Create IO context
             net::io_context ioc;
 
-            // Create and bind the acceptor
-            tcp::acceptor acceptor(ioc, tcp::endpoint(tcp::v4(), config.port));
+            // Create the acceptor
+            tcp::acceptor acceptor(ioc);
+            tcp::endpoint endpoint(tcp::v4(), config.port);
 
-            Logger::getInstance().log("Server started. Listening on port " +
-                                          std::to_string(config.port),
-                                      Logger::LogLevel::INFO);
+            // Try to open and bind to the specified port
+            boost::system::error_code ec;
+            acceptor.open(endpoint.protocol(), ec);
 
-            // Accept connections in a loop
-            while (true)
+            if (ec)
             {
-                // Create a socket
-                auto socket = std::make_shared<tcp::socket>(ioc);
+                Logger::getInstance().log("Cannot open endpoint: " + ec.message(),
+                                          Logger::LogLevel::ERROR);
+                throw boost::system::system_error(ec);
+            }
 
-                // Accept a connection
-                acceptor.accept(*socket);
+            // Set option to allow address reuse
+            acceptor.set_option(tcp::acceptor::reuse_address(true));
 
-                Logger::getInstance().log("Client connected: " +
-                                              socket->remote_endpoint().address().to_string(),
+            // Try to bind to the port
+            acceptor.bind(endpoint, ec);
+
+            if (ec)
+            {
+                Logger::getInstance().log("Cannot bind to port " +
+                                              std::to_string(config.port) +
+                                              ": " + ec.message(),
+                                          Logger::LogLevel::WARNING);
+
+                // Close the current acceptor
+                acceptor.close();
+
+                // Create a new endpoint with port 0 (system-assigned port)
+                endpoint.port(0);
+
+                // Create a new acceptor
+                tcp::acceptor new_acceptor(ioc);
+                new_acceptor.open(endpoint.protocol());
+                new_acceptor.set_option(tcp::acceptor::reuse_address(true));
+                new_acceptor.bind(endpoint);
+
+                // Get the assigned port
+                int actual_port = new_acceptor.local_endpoint().port();
+                Logger::getInstance().log("Using alternative port: " +
+                                              std::to_string(actual_port),
                                           Logger::LogLevel::INFO);
 
-                // Handle the client in a separate thread
-                std::thread clientThread(HandleClient, socket);
-                clientThread.detach();
+                // Start listening on the new acceptor
+                new_acceptor.listen();
+
+                Logger::getInstance().log("Server started. Listening on port " +
+                                              std::to_string(actual_port),
+                                          Logger::LogLevel::INFO);
+
+                // Use the new acceptor for accepting connections
+                accept_connections(new_acceptor);
+            }
+            else
+            {
+                // Start listening on the original port
+                acceptor.listen();
+
+                Logger::getInstance().log("Server started. Listening on port " +
+                                              std::to_string(config.port),
+                                          Logger::LogLevel::INFO);
+
+                // Use the original acceptor for accepting connections
+                accept_connections(acceptor);
             }
         }
         catch (const std::exception &e)
         {
             Logger::getInstance().log("Server error: " + std::string(e.what()),
                                       Logger::LogLevel::ERROR);
+        }
+    }
+
+    // Helper function to accept connections
+    void accept_connections(tcp::acceptor &acceptor)
+    {
+        // Accept connections in a loop
+        while (true)
+        {
+            // Create a socket
+            auto socket = std::make_shared<tcp::socket>(acceptor.get_executor());
+
+            // Accept a connection
+            acceptor.accept(*socket);
+
+            Logger::getInstance().log("Client connected: " +
+                                          socket->remote_endpoint().address().to_string(),
+                                      Logger::LogLevel::INFO);
+
+            // Handle the client in a separate thread
+            std::thread clientThread(HandleClient, socket);
+            clientThread.detach();
         }
     }
 
@@ -208,6 +274,11 @@ namespace MarketDataServer
             // Convert to string
             response = beast::buffers_to_string(res.body().data());
 
+            // Log the first 500 characters of the response for debugging
+            std::string response_preview = response.substr(0, std::min<size_t>(500, response.size()));
+            Logger::getInstance().log("API Response preview: " + response_preview + "...",
+                                      Logger::LogLevel::INFO);
+
             // Gracefully close the stream
             beast::error_code ec;
             stream.shutdown(ec);
@@ -237,7 +308,6 @@ namespace MarketDataServer
 
         return response;
     }
-
     // Fixed version with only the config parameter
     void DataUpdateTask(const ServerConfig config)
     {
@@ -255,6 +325,8 @@ namespace MarketDataServer
                     // Fetch data from API
                     std::string jsonResponse = FetchMarketData(symbol, config.apiKey);
 
+                    bool apiDataProcessed = false;
+
                     if (!jsonResponse.empty())
                     {
                         auto jsonParser = ParserFactory::createJSONParser(jsonResponse);
@@ -262,11 +334,37 @@ namespace MarketDataServer
                         {
                             // Update cache with new data
                             g_dataCache->updateData(symbol, jsonParser->getData());
+                            apiDataProcessed = true;
 
                             logger.log("Updated market data for " + symbol +
                                            ": " + std::to_string(jsonParser->getData().size()) +
                                            " entries",
                                        Logger::LogLevel::INFO);
+                        }
+                    }
+
+                    // If API request failed or returned no data, fall back to CSV
+                    if (!apiDataProcessed)
+                    {
+                        logger.log("API request failed or returned no data for " + symbol +
+                                       ". Falling back to CSV data.",
+                                   Logger::LogLevel::INFO);
+
+                        // CSV fallback
+                        auto csvParser = ParserFactory::createCSVParser(config.dataPath);
+                        if (csvParser->parseData())
+                        {
+                            g_dataCache->updateData(symbol, csvParser->getData());
+
+                            logger.log("Updated market data for " + symbol +
+                                           " from CSV: " + std::to_string(csvParser->getData().size()) +
+                                           " entries",
+                                       Logger::LogLevel::INFO);
+                        }
+                        else
+                        {
+                            logger.log("Failed to load CSV fallback data for " + symbol,
+                                       Logger::LogLevel::ERROR);
                         }
                     }
                 }
@@ -284,7 +382,6 @@ namespace MarketDataServer
 
         logger.log("Periodic market data fetch task stopped", Logger::LogLevel::INFO);
     }
-
     std::thread StartPeriodicFetching(const ServerConfig &config)
     {
         // Set the global flag
@@ -305,14 +402,18 @@ namespace MarketDataServer
         // Use the global data cache instead of creating a new one
         std::vector<MarketDataEntry> data = g_dataCache->getData(symbol);
 
-        if (data.empty())
-        {
-            Logger::getInstance().log("No data available for " + symbol, Logger::LogLevel::WARNING);
-            return;
-        }
-
         try
         {
+            if (data.empty())
+            {
+                // Send a proper error message instead of nothing
+                std::string errorMsg = "ERROR: No data available for symbol: " + symbol + "\n";
+                boost::asio::write(*socket, boost::asio::buffer(errorMsg));
+                Logger::getInstance().log("No data available for " + symbol + ", sent error message",
+                                          Logger::LogLevel::WARNING);
+                return;
+            }
+
             // Convert market data to CSV format for sending
             std::stringstream ss;
             ss << "timestamp,open,high,low,close,volume\n";
@@ -328,6 +429,12 @@ namespace MarketDataServer
             }
 
             std::string dataStr = ss.str();
+
+            // First send a header with the data size
+            std::string header = "DATA_SIZE:" + std::to_string(dataStr.size()) + "\n";
+            boost::asio::write(*socket, boost::asio::buffer(header));
+
+            // Then send the actual data
             boost::asio::write(*socket, boost::asio::buffer(dataStr));
 
             Logger::getInstance().log("Sent " + std::to_string(data.size()) +
@@ -339,6 +446,8 @@ namespace MarketDataServer
             Logger::getInstance().log("Error sending market data: " + std::string(e.what()),
                                       Logger::LogLevel::ERROR);
         }
+
+        // Note: Do not close the socket here - let the client maintain the connection
     }
 
     std::vector<MarketDataEntry> GetLatestData(const std::string &symbol)

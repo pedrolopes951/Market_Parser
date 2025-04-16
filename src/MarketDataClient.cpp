@@ -118,68 +118,87 @@ namespace MarketDataClient
     {
         try
         {
-            std::cout << "Waiting for data from server..." << std::endl;
+            Logger::getInstance().log("Waiting for data from server...", Logger::LogLevel::INFO);
 
-            // Buffer for incoming data
-            boost::asio::streambuf buffer;
+            // Read the header line with data size
+            boost::asio::streambuf header_buffer;
+            boost::asio::read_until(*socket, header_buffer, "\n");
 
-            // Read the entire response
-            boost::system::error_code error;
-            std::cout << "Reading data..." << std::endl;
-            boost::asio::read(*socket, buffer, boost::asio::transfer_all(), error);
+            std::string header_line(boost::asio::buffer_cast<const char *>(header_buffer.data()),
+                                    header_buffer.size());
 
-            if (error && error != boost::asio::error::eof)
+            // Check if it's an error message
+            if (header_line.substr(0, 6) == "ERROR:")
             {
-                std::cout << "Error reading data: " << error.message() << std::endl;
-                throw boost::system::system_error(error);
+                Logger::getInstance().log(header_line, Logger::LogLevel::ERROR);
+                return;
+            }
+
+            // Parse the data size from header
+            size_t data_size = 0;
+            if (header_line.substr(0, 10) == "DATA_SIZE:")
+            {
+                data_size = std::stoull(header_line.substr(10));
+                Logger::getInstance().log("Expected data size: " + std::to_string(data_size) + " bytes",
+                                          Logger::LogLevel::INFO);
+            }
+            else
+            {
+                Logger::getInstance().log("Invalid header format: " + header_line, Logger::LogLevel::ERROR);
+                return;
+            }
+
+            // Read the exact amount of data
+            boost::asio::streambuf data_buffer;
+            boost::system::error_code error;
+            size_t bytes_transferred = boost::asio::read(*socket, data_buffer,
+                                                         boost::asio::transfer_exactly(data_size),
+                                                         error);
+
+            if (error)
+            {
+                Logger::getInstance().log("Error reading data: " + error.message(),
+                                          Logger::LogLevel::ERROR);
+                if (error != boost::asio::error::eof)
+                {
+                    throw boost::system::system_error(error);
+                }
             }
 
             // Convert to string
-            std::string data(boost::asio::buffer_cast<const char *>(buffer.data()),
-                             buffer.size());
+            std::string data(boost::asio::buffer_cast<const char *>(data_buffer.data()),
+                             bytes_transferred);
 
-            std::cout << "Received " << data.size() << " bytes of data" << std::endl;
+            Logger::getInstance().log("Received " + std::to_string(data.size()) + " bytes of data",
+                                      Logger::LogLevel::INFO);
 
-            // Create a temporary file to use with the existing parser
-            std::string tempFileName = "temp_market_data.csv";
-            {
-                std::ofstream tempFile(tempFileName);
-                tempFile << data;
-                std::cout << "Saved data to temporary file" << std::endl;
-            }
-
-            // Use the factory to create the appropriate parser
-            std::cout << "Creating parser..." << std::endl;
-            auto parser = ParserFactory::createCSVParser(tempFileName);
-
-            // Parse the data
-            std::cout << "Parsing data..." << std::endl;
+            // Parse directly from memory instead of using a temporary file
+            auto parser = std::make_unique<DataParserCSV>(data);
             if (!parser->parseData())
             {
-                std::cout << "Failed to parse market data" << std::endl;
+                Logger::getInstance().log("Failed to parse market data", Logger::LogLevel::ERROR);
                 return;
             }
 
             // Get the parsed entries
             const std::vector<MarketDataEntry> &entries = parser->getData();
-            std::cout << "Parsed " << entries.size() << " entries" << std::endl;
+            Logger::getInstance().log("Parsed " + std::to_string(entries.size()) + " entries",
+                                      Logger::LogLevel::INFO);
 
             if (entries.empty())
             {
-                std::cout << "No market data received." << std::endl;
+                Logger::getInstance().log("No market data received", Logger::LogLevel::WARNING);
                 return;
             }
 
-            // Apply filters and display
-            std::cout  << "Displaying filtered data..." << std::endl;
+            // Display filtered data
+            Logger::getInstance().log("Displaying filtered data...", Logger::LogLevel::INFO);
             displayFilteredData(entries);
-
-            // Clean up temporary file
-            std::remove(tempFileName.c_str());
         }
         catch (std::exception &e)
         {
-            std::cerr << "Error processing market data: " << e.what() << std::endl;
+            Logger::getInstance().log("Error processing market data: " + std::string(e.what()),
+                                      Logger::LogLevel::ERROR);
         }
     }
 

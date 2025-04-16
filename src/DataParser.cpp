@@ -110,6 +110,22 @@ bool DataParserJson::parseData()
         // Parse the JSON content
         json jsonData = json::parse(m_jsonContent);
         
+        // First, check if this is a rate limit or error message
+        if (jsonData.contains("Information") || jsonData.contains("Error") || jsonData.contains("Note")) {
+            std::string message;
+            if (jsonData.contains("Information")) {
+                message = jsonData["Information"].get<std::string>();
+            } else if (jsonData.contains("Error")) {
+                message = jsonData["Error"].get<std::string>();
+            } else {
+                message = jsonData["Note"].get<std::string>();
+            }
+            
+            Logger::getInstance().log("API message: " + message, Logger::LogLevel::WARNING);
+            timer.end();
+            return false;
+        }
+        
         // Reserve space for better performance
         m_data.reserve(NUMELEMENTS); // Adjust based on expected data size
         

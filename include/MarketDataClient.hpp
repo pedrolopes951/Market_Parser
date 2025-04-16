@@ -17,7 +17,7 @@ namespace MarketDataClient
     void handleMarketData(std::shared_ptr<tcp::socket> socket);
     
     // Display market data in the console
-    void displayMarketData(const std::vector<MarketDataEntry>& data, size_t maxEntries = 10);
+    void displayMarketData(const std::vector<MarketDataEntry>& data, size_t maxEntries = 100);
 
     // Display filtered market data
     void displayFilteredData(const std::vector<MarketDataEntry>& entries);

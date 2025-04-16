@@ -40,6 +40,9 @@ namespace MarketDataServer
   // Start the server with the given configuration
   void StartServer(const ServerConfig& config);
 
+  void accept_connections(tcp::acceptor &acceptor);
+
+
   // Handler for a single client connections
   void HandleClient(std::shared_ptr<tcp::socket> socket);
 
